@@ -67,11 +67,11 @@ def of_kind(events, kind):
     return [e for e in events if e.kind == kind]
 
 
-def ledger_engine(payments=PLUGIN):
+def ledger_engine(payments=PLUGIN, **layers):
     """A real engine whose payments layer is the named plugin, built the
     way every Lab run builds its layers."""
     spec = ScenarioSpec(name="payments-unit", agents=[],
-                        layers={"payments": payments})
+                        layers={"payments": payments, **layers})
     engine = Engine(spec)
     ledger = engine.layers["payments"]
     for name in ("a", "b", "c"):
@@ -797,16 +797,18 @@ NO_DUPLICATE_NOTE = "no duplicated auction_won delivery to the recorded winner"
 # -- the settlement pointer guard ------------------------------------------
 
 
-def test_a_settlement_that_is_not_the_last_event_is_never_recorded(monkeypatch):
-    """Ledger.transfer always ends with its payment_settled; if it ever did
-    not, the plugin refuses to point a later replay at the wrong event."""
+def test_a_transfer_that_does_not_record_its_settlement_first_is_never_recorded(
+        monkeypatch):
+    """Ledger.transfer records its payment_settled before anything else; if
+    it ever did not, the plugin refuses to point a later replay at the
+    wrong event."""
     original = Ledger.transfer
 
-    def transfer_then_audit(self, frm, to, cents, memo):
-        original(self, frm, to, cents, memo)
+    def audit_then_transfer(self, frm, to, cents, memo):
         self.engine.emit("town", "ledger_audited", memo, {})
+        original(self, frm, to, cents, memo)
 
-    monkeypatch.setattr(Ledger, "transfer", transfer_then_audit)
+    monkeypatch.setattr(Ledger, "transfer", audit_then_transfer)
     engine, ledger = ledger_engine()
     for _ in range(2):
         with pytest.raises(RuntimeError, match="did not record its settlement"):
@@ -815,6 +817,47 @@ def test_a_settlement_that_is_not_the_last_event_is_never_recorded(monkeypatch):
     assert [kind for kind, *_ in payment_events(engine)] == [
         "payment_settled", "payment_settled"]
     assert ledger.balances == {"a": 800, "b": 200, "c": 0}
+
+
+def test_an_event_recorded_after_the_settlement_keeps_the_replay_exact(
+        monkeypatch):
+    """Whatever follows the settlement, a replay points at the settlement."""
+    original = Ledger.transfer
+
+    def transfer_then_audit(self, frm, to, cents, memo):
+        original(self, frm, to, cents, memo)
+        self.engine.emit("town", "ledger_audited", memo, {})
+
+    monkeypatch.setattr(Ledger, "transfer", transfer_then_audit)
+    engine, ledger = ledger_engine()
+    ledger.transfer("a", "b", 100, "X")
+    ledger.transfer("a", "b", 100, "X")
+    settled, = of_kind(engine.events, "payment_settled")
+    replay, = of_kind(engine.events, "payment_replay_ignored")
+    assert replay.detail["settlement"] == settled.event_id
+    assert ledger.balances == {"a": 900, "b": 100, "c": 0}
+
+
+def test_a_layer_reacting_to_the_settlement_keeps_the_replay_exact():
+    """reputation.capped.v1 subscribes to payment_settled and, for a payer
+    with reports already on file, records reputation_reweighted while the
+    settlement is being emitted. The settlement still stands, a repeat
+    still replays it, and nothing settles twice."""
+    engine, ledger = ledger_engine(trust="reputation.capped.v1")
+    engine.layers["trust"].update("a", "c", "good", "fact-1")
+    ledger.transfer("a", "b", 100, "X")
+    ledger.transfer("a", "b", 100, "X")
+    ledger.transfer("a", "c", 100, "X")
+    settled, = of_kind(engine.events, "payment_settled")
+    reweighted = of_kind(engine.events, "reputation_reweighted")
+    assert [e.detail["payment"] for e in reweighted] == [settled.event_id]
+    assert engine.events.index(reweighted[0]) > engine.events.index(settled)
+    replay, = of_kind(engine.events, "payment_replay_ignored")
+    rejected, = of_kind(engine.events, "payment_reuse_rejected")
+    assert replay.detail["settlement"] == settled.event_id
+    assert rejected.detail["settlement"] == settled.event_id
+    assert ledger.settled[("a", "X")] == ("b", 100, settled.event_id)
+    assert ledger.balances == {"a": 900, "b": 100, "c": 0}
 
 
 # -- the report a reader sees ------------------------------------------------

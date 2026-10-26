@@ -124,11 +124,14 @@ class IdempotentLedger(Ledger):
                              {"from": frm, "to": to, "cents": cents,
                               "settlement": settlement})
             return
+        first = len(self.engine.events)
         super().transfer(frm, to, cents, memo)
-        event = self.engine.events[-1]
-        if (event.kind, event.observer, event.subject, event.detail) != (
+        # Layers subscribed to payment_settled may record events after it,
+        # so the settlement is the first event this transfer recorded.
+        recorded = self.engine.events[first:first + 1]
+        if [(e.kind, e.observer, e.subject, e.detail) for e in recorded] != [(
                 "payment_settled", "town", memo,
-                {"from": frm, "to": to, "cents": cents}):
+                {"from": frm, "to": to, "cents": cents})]:
             raise RuntimeError(f"transfer {memo!r} did not record its"
-                               " settlement last")
-        self.settled[key] = (to, cents, event.event_id)
+                               " settlement first")
+        self.settled[key] = (to, cents, recorded[0].event_id)
