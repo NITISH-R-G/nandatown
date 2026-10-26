@@ -11,9 +11,10 @@ from nandatown.sim.scenario import (
 )
 
 ALL_SCENARIOS = ["marketplace", "auction", "voting", "consensus",
-                 "supply_chain", "capability_spoofing",
-                 "auction_duplicate_award"]
+                 "supply_chain", "capability_spoofing", "capped_influence",
+                 "registry_eviction", "auction_duplicate_award"]
 FAILING_SCENARIOS = ["capability_spoofing_weak_auth",
+                     "capped_influence_uncapped_control", "registry_eviction_unowned",
                      "auction_duplicate_award_no_idempotency"]
 
 

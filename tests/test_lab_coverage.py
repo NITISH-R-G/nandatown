@@ -35,6 +35,13 @@ NATIVE_SCENARIO_STAGES = {
         "spoof_detected", "honest_verified", "containment",
         "honest_trade_completed",
     },
+    "capped_influence": {
+        "slander_filed", "influence_capped", "honest_signal_survives",
+        "honest_trade_completed",
+    },
+    "registry_eviction": {
+        "forgery_detected", "listing_intact", "honest_trade_completed",
+    },
     "auction_duplicate_award": {
         "announced", "bidding", "award", "settlement", "delivery",
         "duplicate_award_delivered", "duplicate_payment_replayed",
@@ -129,6 +136,8 @@ def test_declared_privacy_rejects_an_unredacted_event():
     ("consensus", NATIVE_SCENARIO_STAGES["consensus"]),
     ("supply_chain", NATIVE_SCENARIO_STAGES["supply_chain"]),
     ("capability_spoofing", NATIVE_SCENARIO_STAGES["capability_spoofing"]),
+    ("capped_influence", NATIVE_SCENARIO_STAGES["capped_influence"]),
+    ("registry_eviction", NATIVE_SCENARIO_STAGES["registry_eviction"]),
     ("auction_duplicate_award",
      NATIVE_SCENARIO_STAGES["auction_duplicate_award"]),
 ])
